@@ -1,7 +1,7 @@
 """MCP Hub: ابزارهای ریلز اینستاگرام + گیت‌هاب در یک سرور و یک آدرس.
 
 کد هر دو پروژه بدون تغییر استفاده می‌شود:
-  app/server.py  -> ابزارهای ریلز (create_reel, reel_status, list_reels, cancel_reel)
+  app/server.py  -> ابزارهای ریلز (create_reel, reel_status, list_reels, cancel_reel, upload_limits)
   ghserver.py    -> ابزارهای گیت‌هاب + احراز هویت چنداکانتی (/<راز-اکانت>/mcp)
 """
 import logging
@@ -17,7 +17,7 @@ from app import server as reels
 import ghserver as gh
 
 INSTRUCTIONS = (
-    "This server has two toolsets. Instagram Reels tools: create_reel, reel_status, list_reels, cancel_reel. "
+    "This server has two toolsets. Instagram Reels tools: create_reel, reel_status, list_reels, cancel_reel, upload_limits. "
     "GitHub tools: get_rules, list_repos, list_files, read_file, create_branch, write_files, open_pull_request. "
     "Use each toolset only for its own purpose.\n\n"
     "[Reels]\n" + (getattr(reels.mcp, "instructions", None) or "") + "\n\n"
@@ -33,7 +33,7 @@ hub = FastMCP(
 )
 
 TOOLS = [
-    reels.create_reel, reels.reel_status, reels.list_reels, reels.cancel_reel,
+    reels.create_reel, reels.reel_status, reels.list_reels, reels.cancel_reel, reels.upload_limits,
     gh.get_rules, gh.list_repos, gh.list_files, gh.read_file,
     gh.create_branch, gh.write_files, gh.open_pull_request,
 ]
