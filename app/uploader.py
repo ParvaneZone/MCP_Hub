@@ -3,7 +3,7 @@ import time
 
 import httpx
 
-from . import db
+from . import db, zernio
 from .config import UPLOADPOST_API_KEYS, UPLOADPOST_USER
 
 log = logging.getLogger("uploader")
@@ -87,6 +87,25 @@ def _poll(rid, key):
     return js, False
 
 
+def _try_zernio(job_id, job, notify):
+    """آپلودر اصلی. True یعنی کار تمام شد (منتشر یا در حال پردازش)؛
+    False یعنی خطا تلگرام شد و باید به upload-post رفت."""
+    try:
+        res = zernio.publish(job)
+    except Exception as e:
+        log.warning("zernio failed: %s", e)
+        notify(f"⚠️ ارسال ریل #{job_id} با Zernio ناموفق بود:\n{str(e)[:500]}\n\n↪️ دارم با upload-post امتحان می‌کنم…")
+        return False
+    if res["status"] == "published":
+        db.update(job_id, status="published", url=res["url"], detail="")
+        notify(f"✅ ریل #{job_id} از طریق Zernio منتشر شد.\n{res['url']}".strip())
+        db.remove_video(job_id)
+    else:
+        db.update(job_id, status="uploading", detail=f"zernio post_id={res['post_id']}")
+        notify(f"⏳ ریل #{job_id} در Zernio هنوز در حال پردازش است (post_id: {res['post_id']}). برای جلوگیری از پست تکراری از upload-post استفاده نشد.")
+    return True
+
+
 def run_job(job_id, notify):
     """notify(text, retry=False). Runs in a worker thread after Telegram approval."""
     job = db.get(job_id)
@@ -94,6 +113,8 @@ def run_job(job_id, notify):
     db.update(job_id, attempts=attempts)
     rid = f"{job_id}-{attempts}"
     try:
+        if zernio.enabled() and _try_zernio(job_id, job, notify):
+            return
         js, key = _send_any(job, rid)
         finished = True
         if "results" not in js:
