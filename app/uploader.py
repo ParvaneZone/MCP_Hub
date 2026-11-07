@@ -4,7 +4,7 @@ import time
 import httpx
 
 from . import db
-from .config import UPLOADPOST_API_KEY, UPLOADPOST_USER
+from .config import UPLOADPOST_API_KEYS, UPLOADPOST_USER
 
 log = logging.getLogger("uploader")
 BASE = "https://api.upload-post.com/api"
@@ -27,8 +27,12 @@ def _norm(results):
     return items
 
 
-def _send(job, rid):
-    headers = {"Authorization": f"Apikey {UPLOADPOST_API_KEY}", "Idempotency-Key": rid}
+class _KeyFailed(UploadError):
+    """این کلید جواب نداد (لیمیت/نامعتبر/خطای سرور)؛ برو سراغ بعدی."""
+
+
+def _send(job, rid, key):
+    headers = {"Authorization": f"Apikey {key}", "Idempotency-Key": rid}
     data = {
         "user": UPLOADPOST_USER,
         "platform[]": "instagram",
@@ -37,21 +41,39 @@ def _send(job, rid):
         "async_upload": "true",
         "request_id": rid,
     }
-    with open(job["video_path"], "rb") as f:
-        r = httpx.post(f"{BASE}/upload", headers=headers, data=data,
-                       files={"video": (f"{job['id']}.mp4", f, "video/mp4")},
-                       timeout=httpx.Timeout(300, connect=30))
+    try:
+        with open(job["video_path"], "rb") as f:
+            r = httpx.post(f"{BASE}/upload", headers=headers, data=data,
+                           files={"video": (f"{job['id']}.mp4", f, "video/mp4")},
+                           timeout=httpx.Timeout(300, connect=30))
+    except httpx.HTTPError as e:
+        raise _KeyFailed(f"network: {e}")
     try:
         js = r.json()
     except Exception:
         js = {}
     if r.status_code >= 400:
-        raise UploadError(js.get("message") or js.get("error") or r.text[:300])
+        msg = js.get("message") or js.get("error") or r.text[:300]
+        if r.status_code in (401, 402, 403, 429) or r.status_code >= 500:
+            raise _KeyFailed(f"HTTP {r.status_code}: {msg}")
+        raise UploadError(msg)
     return js
 
 
-def _poll(rid):
-    headers = {"Authorization": f"Apikey {UPLOADPOST_API_KEY}"}
+def _send_any(job, rid):
+    """کلیدها را به ترتیب امتحان می‌کند؛ (پاسخ، کلید موفق) را برمی‌گرداند."""
+    errors = []
+    for i, key in enumerate(UPLOADPOST_API_KEYS, 1):
+        try:
+            return _send(job, rid, key), key
+        except _KeyFailed as e:
+            log.warning("upload-post key #%d failed: %s", i, e)
+            errors.append(f"#{i}: {e}")
+    raise UploadError("همه‌ی API keyها ناموفق بودند:\n" + "\n".join(errors))
+
+
+def _poll(rid, key):
+    headers = {"Authorization": f"Apikey {key}"}
     time.sleep(5)
     js = {}
     for _ in range(90):  # ~15 min
@@ -72,10 +94,10 @@ def run_job(job_id, notify):
     db.update(job_id, attempts=attempts)
     rid = f"{job_id}-{attempts}"
     try:
-        js = _send(job, rid)
+        js, key = _send_any(job, rid)
         finished = True
         if "results" not in js:
-            js, finished = _poll(rid)
+            js, finished = _poll(rid, key)
         items = _norm(js.get("results"))
         ig = [r for p, r in items if p == "instagram"] or [r for _, r in items]
         if not finished and not ig:
