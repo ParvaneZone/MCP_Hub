@@ -11,7 +11,11 @@ DATA_DIR = Path(env("DATA_DIR", "/app/data"))
 (DATA_DIR / "music").mkdir(parents=True, exist_ok=True)
 FONT_DIR = Path(env("FONT_DIR", "/app/fonts"))
 
-UPLOADPOST_API_KEY = env("UPLOADPOST_API_KEY")
+# چند کلید با کاما یا خط جدید جدا می‌شوند؛ به ترتیب امتحان می‌شوند.
+UPLOADPOST_API_KEYS = [k.strip() for k in
+                       (env("UPLOADPOST_API_KEYS") or env("UPLOADPOST_API_KEY")).replace("\n", ",").split(",")
+                       if k.strip()]
+UPLOADPOST_API_KEY = UPLOADPOST_API_KEYS[0] if UPLOADPOST_API_KEYS else ""
 UPLOADPOST_USER = env("UPLOADPOST_USER")
 TELEGRAM_BOT_TOKEN = env("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = env("TELEGRAM_CHAT_ID")
@@ -24,6 +28,6 @@ DEFAULT_HANDLE = env("DEFAULT_HANDLE")
 
 
 def missing():
-    req = ["UPLOADPOST_API_KEY", "UPLOADPOST_USER", "TELEGRAM_BOT_TOKEN",
+    req = ["UPLOADPOST_API_KEYS", "UPLOADPOST_USER", "TELEGRAM_BOT_TOKEN",
            "TELEGRAM_CHAT_ID", "MCP_SECRET"]
     return [k for k in req if not globals()[k]]
