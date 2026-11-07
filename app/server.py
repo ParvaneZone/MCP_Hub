@@ -6,6 +6,7 @@ import threading
 import uuid
 from typing import Literal, Optional
 
+import httpx
 import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -13,6 +14,7 @@ from pydantic import BaseModel, Field
 from starlette.responses import PlainTextResponse
 
 from . import config, db, render, telegram_bot as bot
+from .uploader import BASE as UPLOAD_BASE
 
 log = logging.getLogger("server")
 
@@ -143,6 +145,28 @@ async def cancel_reel(job_id: str) -> dict:
         db.remove_video(job_id)
         return {"id": job_id, "status": "cancelled"}
     return {"id": job_id, "status": "not_cancellable"}
+
+
+@mcp.tool()
+async def upload_limits() -> list[dict]:
+    """Check every configured upload-post API key (in failover order): validity, plan and rate-limit headers."""
+    out = []
+    async with httpx.AsyncClient(timeout=20) as c:
+        for i, key in enumerate(config.UPLOADPOST_API_KEYS, 1):
+            item = {"key": f"#{i} ...{key[-4:]}"}
+            try:
+                r = await c.get(f"{UPLOAD_BASE}/uploadposts/me", headers={"Authorization": f"Apikey {key}"})
+                item["http"] = r.status_code
+                try:
+                    item["account"] = r.json()
+                except Exception:
+                    item["account"] = r.text[:200]
+                item["limits"] = {k: v for k, v in r.headers.items()
+                                  if "limit" in k.lower() or "remaining" in k.lower() or k.lower() == "retry-after"}
+            except httpx.HTTPError as e:
+                item["error"] = str(e)
+            out.append(item)
+    return out
 
 
 def main():
