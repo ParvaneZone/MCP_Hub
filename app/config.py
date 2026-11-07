@@ -17,6 +17,10 @@ UPLOADPOST_API_KEYS = [k.strip() for k in
                        if k.strip()]
 UPLOADPOST_API_KEY = UPLOADPOST_API_KEYS[0] if UPLOADPOST_API_KEYS else ""
 UPLOADPOST_USER = env("UPLOADPOST_USER")
+# Zernio (آپلودر اصلی؛ اگر خالی باشد مستقیم upload-post استفاده می‌شود)
+ZERNIO_API_KEY = env("ZERNIO_API_KEY")
+ZERNIO_ACCOUNT_ID = env("ZERNIO_ACCOUNT_ID")
+ZERNIO_BASE = env("ZERNIO_BASE", "https://zernio.com/api/v1").rstrip("/")
 TELEGRAM_BOT_TOKEN = env("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = env("TELEGRAM_CHAT_ID")
 TELEGRAM_API_BASE = env("TELEGRAM_API_BASE", "https://api.telegram.org").rstrip("/")
