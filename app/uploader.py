@@ -14,6 +14,11 @@ class UploadError(Exception):
     pass
 
 
+def _label(key):
+    """شماره و چهار کاراکتر آخر کلید؛ برای مشخص شدن اکانت مشکل‌دار."""
+    return f"key #{UPLOADPOST_API_KEYS.index(key) + 1} (...{key[-4:]})"
+
+
 def _norm(results):
     """Normalise sync (dict) and status (list) result shapes."""
     items = []
@@ -63,12 +68,14 @@ def _send(job, rid, key):
 def _send_any(job, rid):
     """کلیدها را به ترتیب امتحان می‌کند؛ (پاسخ، کلید موفق) را برمی‌گرداند."""
     errors = []
-    for i, key in enumerate(UPLOADPOST_API_KEYS, 1):
+    for key in UPLOADPOST_API_KEYS:
         try:
             return _send(job, rid, key), key
         except _KeyFailed as e:
-            log.warning("upload-post key #%d failed: %s", i, e)
-            errors.append(f"#{i}: {e}")
+            log.warning("upload-post %s failed: %s", _label(key), e)
+            errors.append(f"{_label(key)}: {e}")
+        except UploadError as e:
+            raise UploadError(f"{_label(key)}: {e}")
     raise UploadError("همه‌ی API keyها ناموفق بودند:\n" + "\n".join(errors))
 
 
@@ -134,7 +141,7 @@ def run_job(job_id, notify):
         else:
             msg = next((r.get("error") or r.get("message") for r in ig
                         if r.get("error") or r.get("message")), "نامشخص")
-            raise UploadError(str(msg))
+            raise UploadError(f"{_label(key)}: {msg}")
     except Exception as e:
         log.exception("upload failed")
         db.update(job_id, status="failed", detail=str(e)[:500])
