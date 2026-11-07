@@ -1,0 +1,35 @@
+services:
+  hub:
+    build: .
+    container_name: mcp-hub
+    restart: unless-stopped
+    env_file: .env
+    expose: ["8787"]
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config:ro
+      - ./fonts:/app/fonts:ro
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: mcp-caddy
+    restart: unless-stopped
+    depends_on: [hub]
+    ports:
+      - "80:80"
+      - "${SSL_PORT:-443}:${SSL_PORT:-443}"
+    environment:
+      SITE_ADDR: ${SITE_ADDR:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+# گواهی‌های SSL قبلی دوباره استفاده می‌شوند (حجم‌های پروژه‌ی قدیمی reels-mcp)
+volumes:
+  caddy_data:
+    external: true
+    name: reels-mcp_caddy_data
+  caddy_config:
+    external: true
+    name: reels-mcp_caddy_config

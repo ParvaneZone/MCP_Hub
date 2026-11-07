@@ -1,0 +1,10 @@
+{$SITE_ADDR} {
+        tls {
+                issuer acme {
+                        disable_tlsalpn_challenge
+                }
+        }
+        reverse_proxy hub:8787 {
+                flush_interval -1
+        }
+}

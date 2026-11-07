@@ -1,0 +1,13 @@
+{
+  "allowed_repos": [],
+  "branch_prefix": "claude/",
+  "protected_branches": ["main", "master"],
+  "protected_paths": [".github/workflows/*", ".env", "*.pem", "*.key"],
+  "blocked_read_paths": [".env", "*.pem", "*.key"],
+  "max_files_per_commit": 40,
+  "max_file_bytes": 300000,
+  "max_total_bytes": 1000000,
+  "block_secrets": true,
+  "allow_delete": true,
+  "commit_message_regex": "^[A-Za-z0-9].{4,199}$"
+}
