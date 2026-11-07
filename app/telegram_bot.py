@@ -84,7 +84,7 @@ def _on_callback(cb):
     if action == "ok" and db.claim(job_id, "pending", "uploading"):
         _answer(cb, "در حال ارسال…")
         _strip_buttons(cb)
-        send(f"📤 ریل #{job_id} تأیید شد و دارد به upload-post ارسال می‌شود…")
+        send(f"📤 ریل #{job_id} تأیید شد و دارد به اینستاگرام ارسال می‌شود…")
         _start_upload(job_id)
     elif action == "no" and db.claim(job_id, "pending", "rejected"):
         _answer(cb, "رد شد")
