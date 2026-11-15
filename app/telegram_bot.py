@@ -1,16 +1,19 @@
 import json
 import logging
+import re
 import threading
 import time
 
 import httpx
 
-from . import db, uploader
-from .config import (APPROVAL_TTL_HOURS, TELEGRAM_API_BASE, TELEGRAM_BOT_TOKEN,
+from . import cover, db, uploader
+from .config import (APPROVAL_TTL_HOURS, DATA_DIR, TELEGRAM_API_BASE, TELEGRAM_BOT_TOKEN,
                      TELEGRAM_CHAT_ID)
 
 log = logging.getLogger("telegram")
 API = f"{TELEGRAM_API_BASE}/bot{TELEGRAM_BOT_TOKEN}"
+MAX_IMAGE_BYTES = 20 * 1024 * 1024  # Telegram getFile limit
+_ID_RE = re.compile(r"\b([0-9a-f]{8})\b")
 
 
 def call(method, data=None, files=None, timeout=60):
@@ -36,7 +39,9 @@ def send_preview(job_id, caption, video_path, secs):
     with open(video_path, "rb") as f:
         res = call("sendVideo", {
             "chat_id": TELEGRAM_CHAT_ID,
-            "caption": f"🎬 پیش‌نمایش ریل #{job_id}\n⏱ {secs:.0f} ثانیه\nتا تأیید نکنی چیزی ارسال نمی‌شود.",
+            "caption": f"🎬 پیش‌نمایش ریل #{job_id}\n⏱ {secs:.0f} ثانیه\n"
+                       "🖼 برای کاور سفارشی، یک عکس را روی همین پیام Reply کن.\n"
+                       "تا تأیید نکنی چیزی ارسال نمی‌شود.",
             "reply_markup": json.dumps(kb),
             "supports_streaming": "true", "width": 1080, "height": 1920,
         }, {"video": (f"{job_id}.mp4", f, "video/mp4")}, timeout=300)
@@ -99,6 +104,49 @@ def _on_callback(cb):
         _answer(cb, "این ریل دیگر در انتظار تأیید نیست.")
 
 
+def _download(file_id):
+    info = call("getFile", {"file_id": file_id})
+    r = httpx.get(f"{TELEGRAM_API_BASE}/file/bot{TELEGRAM_BOT_TOKEN}/{info['file_path']}", timeout=60)
+    r.raise_for_status()
+    return r.content
+
+
+def _pick_job(msg):
+    """Which reel a photo belongs to: reply target > reel id in caption > the only pending reel."""
+    reply = msg.get("reply_to_message") or {}
+    nested = (reply.get("reply_to_message") or {}).get("message_id")  # reply to the caption message
+    for mid in (reply.get("message_id"), nested):
+        job = db.find_by_tg_message(mid) if mid else None
+        if job:
+            return job
+    for jid in _ID_RE.findall((msg.get("caption") or "").lower()):
+        job = db.get(jid)
+        if job:
+            return job
+    pending = db.pending_jobs()
+    return pending[0] if len(pending) == 1 else None
+
+
+def _on_cover(msg, file_id):
+    job = _pick_job(msg)
+    if not job:
+        send("🖼 این عکس برای کدام ریل است؟ آن را روی پیام پیش‌نمایش ریل Reply کن "
+             "یا در کپشن عکس شناسه‌ی ریل را بنویس (مثلاً #ab12cd34).")
+        return
+    if job["status"] not in ("pending", "failed"):
+        send(f"⚠️ ریل #{job['id']} در وضعیت «{job['status']}» است و دیگر کاورش قابل تغییر نیست.")
+        return
+    try:
+        path = DATA_DIR / "covers" / f"{job['id']}.jpg"
+        cover.normalize(_download(file_id), str(path))
+    except Exception:
+        log.exception("cover failed")
+        send("❌ این فایل به‌عنوان تصویر خوانده نشد. یک عکس JPG یا PNG بفرست.")
+        return
+    db.set_cover(job["id"], str(path))
+    send(f"🖼 کاور ریل #{job['id']} ذخیره شد و موقع انتشار روی اینستاگرام استفاده می‌شود.")
+
+
 def _on_message(msg):
     chat = str(msg["chat"]["id"])
     text = (msg.get("text") or "").strip()
@@ -106,6 +154,16 @@ def _on_message(msg):
         call("sendMessage", {"chat_id": chat, "text": f"Chat ID شما: {chat}"})
         return
     if chat != str(TELEGRAM_CHAT_ID):
+        return
+    doc = msg.get("document") or {}
+    if msg.get("photo"):
+        _on_cover(msg, msg["photo"][-1]["file_id"])
+        return
+    if (doc.get("mime_type") or "").startswith("image/"):
+        if (doc.get("file_size") or 0) > MAX_IMAGE_BYTES:
+            send("⚠️ حجم تصویر بیشتر از ۲۰ مگابایت است.")
+        else:
+            _on_cover(msg, doc["file_id"])
         return
     if text.startswith("/list"):
         rows = db.recent(8)

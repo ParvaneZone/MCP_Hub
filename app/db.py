@@ -31,6 +31,9 @@ def init():
         theme TEXT, detail TEXT DEFAULT '', url TEXT DEFAULT '',
         attempts INTEGER DEFAULT 0, tg_message_id INTEGER,
         created REAL, updated REAL)""")
+    cols = [r["name"] for r in _run("PRAGMA table_info(jobs)", many=True)]
+    if "cover_path" not in cols:
+        _run("ALTER TABLE jobs ADD COLUMN cover_path TEXT DEFAULT ''")
 
 
 def create(job_id, caption, video_path, theme):
@@ -61,13 +64,28 @@ def recent(n=10):
                 (n,), many=True)
 
 
+def set_cover(job_id, path):
+    update(job_id, cover_path=path)
+
+
+def find_by_tg_message(message_id):
+    return _run("SELECT * FROM jobs WHERE tg_message_id=?", (message_id,), one=True)
+
+
+def pending_jobs():
+    return _run("SELECT * FROM jobs WHERE status='pending' ORDER BY created DESC", many=True)
+
+
 def remove_video(job_id):
+    """Delete the job's video and its custom cover (if any) from disk."""
     j = get(job_id)
-    if j and j["video_path"] and os.path.exists(j["video_path"]):
-        try:
-            os.remove(j["video_path"])
-        except OSError:
-            pass
+    for key in ("video_path", "cover_path"):
+        p = j and j.get(key)
+        if p and os.path.exists(p):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
 
 
 def expire_pending(ttl_seconds):
