@@ -76,6 +76,22 @@ ask() {
   return 0
 }
 
+# Zernio is the main reel uploader and is required for custom covers.
+ask_zernio() {
+  echo "Zernio accountId: curl -s -H 'Authorization: Bearer <KEY>' https://zernio.com/api/v1/accounts"
+  ask ZERNIO_API_KEY "Zernio API key (Enter to skip)" s
+  ask ZERNIO_ACCOUNT_ID "Zernio Instagram accountId (Enter to skip)"
+}
+
+# Used by update: ask once if Zernio is still not configured (interactive shells only).
+ensure_zernio() {
+  [ -t 0 ] || return 0
+  if [ -n "$(env_get ZERNIO_API_KEY)" ] && [ -n "$(env_get ZERNIO_ACCOUNT_ID)" ]; then return 0; fi
+  warn "Zernio is not configured. It is the main reel uploader and is needed for custom covers."
+  echo "Enter the values, or press Enter to skip (upload-post will be used)."
+  ask_zernio
+}
+
 public_host() {
   local h p
   h="$(env_get SITE_ADDR)"; p="$(env_get SSL_PORT)"
@@ -111,6 +127,7 @@ setup() {
   echo "${C_B}Configuration${C_0} (press Enter to keep the current value)"
   ask SITE_ADDR "Domain (A record must point to this server)"
   ask SSL_PORT "HTTPS port"
+  ask_zernio
   ask UPLOADPOST_API_KEY "Upload-Post API key" s
   ask UPLOADPOST_USER "Upload-Post user"
   ask TELEGRAM_BOT_TOKEN "Telegram bot token" s
@@ -167,6 +184,7 @@ do_update() {
   git pull --ff-only || { err "git pull failed"; return 1; }
   ensure_volumes
   check_env || return 1
+  ensure_zernio
   dc up -d --build && ok "Updated"
   docker image prune -f >/dev/null 2>&1 || true
 }
