@@ -36,3 +36,7 @@ git clone https://github.com/ParvaneZone/MCP_Hub.git /opt/mcp-hub && bash /opt/m
 راه دستی هم هنوز کار می‌کند:
 اکانت‌های بیشتر: `docker compose exec hub python manage.py` (راهنما را نشان می‌دهد).
 به‌روزرسانی: `./update.sh`
+
+## انتشار ریل با Zernio
+
+آپلودر اصلی ریل‌ها Zernio است (upload-post پشتیبان). تنظیمات، روند API و نحوه‌ی فرستادن کاور ویدیو از تلگرام در [docs/zernio.md](docs/zernio.md) توضیح داده شده است.

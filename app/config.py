@@ -9,6 +9,7 @@ def env(key, default=""):
 DATA_DIR = Path(env("DATA_DIR", "/app/data"))
 (DATA_DIR / "videos").mkdir(parents=True, exist_ok=True)
 (DATA_DIR / "music").mkdir(parents=True, exist_ok=True)
+(DATA_DIR / "covers").mkdir(parents=True, exist_ok=True)
 FONT_DIR = Path(env("FONT_DIR", "/app/fonts"))
 
 # چند کلید با کاما یا خط جدید جدا می‌شوند؛ به ترتیب امتحان می‌شوند.

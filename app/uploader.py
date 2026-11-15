@@ -101,15 +101,17 @@ def _try_zernio(job_id, job, notify):
         res = zernio.publish(job)
     except Exception as e:
         log.warning("zernio failed: %s", e)
-        notify(f"⚠️ ارسال ریل #{job_id} با Zernio ناموفق بود:\n{str(e)[:500]}\n\n↪️ دارم با upload-post امتحان می‌کنم…")
+        cover_note = "\n🖼 مسیر upload-post کاور سفارشی را اعمال نمی‌کند." if job.get("cover_path") else ""
+        notify(f"⚠️ ارسال ریل #{job_id} با Zernio ناموفق بود:\n{str(e)[:500]}\n\n↪️ دارم با upload-post امتحان می‌کنم…{cover_note}")
         return False
+    note = "\n⚠️ آپلود کاور ناموفق بود؛ ریل بدون کاور سفارشی منتشر شد." if res.get("cover_failed") else ""
     if res["status"] == "published":
         db.update(job_id, status="published", url=res["url"], detail="")
-        notify(f"✅ ریل #{job_id} از طریق Zernio منتشر شد.\n{res['url']}".strip())
+        notify(f"✅ ریل #{job_id} از طریق Zernio منتشر شد.\n{res['url']}{note}".strip())
         db.remove_video(job_id)
     else:
         db.update(job_id, status="uploading", detail=f"zernio post_id={res['post_id']}")
-        notify(f"⏳ ریل #{job_id} در Zernio هنوز در حال پردازش است (post_id: {res['post_id']}). برای جلوگیری از پست تکراری از upload-post استفاده نشد.")
+        notify(f"⏳ ریل #{job_id} در Zernio هنوز در حال پردازش است (post_id: {res['post_id']}). برای جلوگیری از پست تکراری از upload-post استفاده نشد.{note}")
     return True
 
 

@@ -1,11 +1,13 @@
 """Zernio client: publish a Reel to Instagram (primary uploader).
 
 Flow (docs.zernio.com):
-  1. POST /v1/media/presign  -> uploadUrl + publicUrl
+  1. POST /v1/media/presign  -> uploadUrl + publicUrl   (video, and optional cover image)
   2. PUT file to uploadUrl   (no Authorization header)
   3. POST /v1/posts          with publicUrl in mediaItems, publishNow=true
+     (cover image: mediaItems[].instagramThumbnail)
 """
 import logging
+import os
 import time
 
 import httpx
@@ -44,22 +46,34 @@ def _request(method, url, **kw):
         raise ZernioError(f"network: {e}")
 
 
-def _upload_video(job):
+def _upload_file(path, filename, content_type):
     r = _request("POST", f"{ZERNIO_BASE}/media/presign", headers=_headers(),
-                 json={"filename": f"{job['id']}.mp4", "contentType": "video/mp4"}, timeout=30)
+                 json={"filename": filename, "contentType": content_type}, timeout=30)
     if r.status_code >= 400:
         raise ZernioError(f"presign failed - {_err(r)}")
     js = r.json()
     upload_url, public_url = js.get("uploadUrl"), js.get("publicUrl")
     if not upload_url or not public_url:
         raise ZernioError(f"presign response incomplete: {str(js)[:200]}")
-    with open(job["video_path"], "rb") as f:
+    with open(path, "rb") as f:
         data = f.read()
-    r = _request("PUT", upload_url, content=data, headers={"Content-Type": "video/mp4"},
+    r = _request("PUT", upload_url, content=data, headers={"Content-Type": content_type},
                  timeout=httpx.Timeout(300, connect=30))
     if r.status_code >= 400:
         raise ZernioError(f"file upload failed - HTTP {r.status_code}: {r.text[:200]}")
     return public_url
+
+
+def _upload_video(job):
+    return _upload_file(job["video_path"], f"{job['id']}.mp4", "video/mp4")
+
+
+def _upload_cover(job):
+    """Public URL of the job's custom cover, or '' when it has none."""
+    path = job.get("cover_path") or ""
+    if not path or not os.path.exists(path):
+        return ""
+    return _upload_file(path, f"{job['id']}-cover.jpg", "image/jpeg")
 
 
 def _platform_result(post):
@@ -73,13 +87,23 @@ def _platform_result(post):
 def publish(job):
     """Publish the job's video as an Instagram Reel.
 
-    Returns {"status": "published"|"pending", "url": str, "post_id": str}.
-    Raises ZernioError on any failure (caller falls back to upload-post).
+    Returns {"status": "published"|"pending", "url": str, "post_id": str, "cover_failed": bool}.
+    A failed cover upload is not fatal: the reel is published without the custom cover.
+    Raises ZernioError on any other failure (caller falls back to upload-post).
     """
     public_url = _upload_video(job)
+    item = {"url": public_url, "type": "video"}
+    cover_failed = False
+    try:
+        cover_url = _upload_cover(job)
+    except (ZernioError, OSError) as e:
+        log.warning("cover upload failed: %s", e)
+        cover_url, cover_failed = "", True
+    if cover_url:
+        item["instagramThumbnail"] = cover_url
     body = {
         "content": (job["caption"] or "")[:2200],
-        "mediaItems": [{"url": public_url, "type": "video"}],
+        "mediaItems": [item],
         "platforms": [{"platform": "instagram", "accountId": ZERNIO_ACCOUNT_ID}],
         "publishNow": True,
     }
@@ -103,8 +127,8 @@ def publish(job):
         status, url, err = _platform_result(post)
 
     if status == "published":
-        return {"status": "published", "url": url, "post_id": post_id}
+        return {"status": "published", "url": url, "post_id": post_id, "cover_failed": cover_failed}
     if status in ("failed", "error"):
         raise ZernioError(err or "platform reported failure")
     # Still processing: do NOT fall back, or the reel could be posted twice.
-    return {"status": "pending", "url": url, "post_id": post_id}
+    return {"status": "pending", "url": url, "post_id": post_id, "cover_failed": cover_failed}
